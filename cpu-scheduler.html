@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CPU Scheduling Visualizer</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1b1f2a;--mu:#667085;--bd:#dfe3ec;--ac:#4f46e5;--acx:#fff;--idle:#e5e7eb;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1117;--card:#181b24;--tx:#e8eaf0;--mu:#9aa3b5;--bd:#2a2f3d;--ac:#818cf8;--acx:#0f1117;--idle:#2a2f3d}}
+:root[data-theme="dark"]{--bg:#0f1117;--card:#181b24;--tx:#e8eaf0;--mu:#9aa3b5;--bd:#2a2f3d;--ac:#818cf8;--acx:#0f1117;--idle:#2a2f3d}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mu);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--mu);margin:0 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+label{font-size:13px;color:var(--mu)}
+select,input{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;font:inherit}
+input[type=number]{width:70px}
+button{background:var(--ac);color:var(--acx);border:0;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.s{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button:disabled{opacity:.5;cursor:default}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--bd)}
+th{font-size:12px;color:var(--mu);font-weight:600}
+.dot{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:6px}
+.cpu{width:110px;height:70px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;background:var(--idle);color:var(--tx);border:2px solid var(--bd)}
+.chip{min-width:44px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;padding:0 8px}
+.q{display:flex;gap:6px;min-height:40px;align-items:center;flex-wrap:wrap}
+.gantt{display:flex;min-height:48px}
+.cell{width:32px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;border-right:1px solid rgba(255,255,255,.35)}
+.cell.i{background:var(--idle);color:var(--mu)}
+.ruler{display:flex}.ruler span{width:32px;flex:none;font-size:11px;color:var(--mu);text-align:left;margin-left:-0px}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px 14px}
+.stat b{display:block;font-size:18px}.stat span{font-size:12px;color:var(--mu)}
+.hint{font-size:13px;color:var(--mu)}
+.best{font-weight:700;color:var(--ac)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>CPU Scheduling Visualizer</h1>
+<p class="sub">Edit the processes, pick an algorithm, and watch the OS scheduler decide who runs on the CPU, tick by tick.</p>
+
+<div class="card">
+<h2>Setup</h2>
+<div class="row" style="margin-bottom:12px">
+<label>Algorithm <select id="algo">
+<option value="FCFS">FCFS (First Come First Served)</option>
+<option value="SJF">SJF (Non-preemptive)</option>
+<option value="SRTF">SRTF (Preemptive SJF)</option>
+<option value="PRIO">Priority (Non-preemptive)</option>
+<option value="PRIOP">Priority (Preemptive)</option>
+<option value="RR">Round Robin</option></select></label>
+<label id="qwrap">Time quantum <input type="number" id="quantum" min="1" value="2"></label>
+<button class="s" id="add">+ Add process</button>
+<button class="s" id="rand">Random set</button>
+<button class="s" id="sample">Sample set</button>
+</div>
+<div class="scroll"><table id="ptable"><thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Priority<br><span style="font-weight:400">(lower = higher)</span></th><th></th></tr></thead><tbody></tbody></table></div>
+</div>
+
+<div class="card">
+<h2>Simulation</h2>
+<div class="row" style="margin-bottom:14px">
+<button id="play">Play</button><button class="s" id="step">Step</button><button class="s" id="reset">Reset</button>
+<label>Speed <input type="range" id="speed" min="1" max="10" value="5"></label>
+<span class="hint" id="clock">Time: 0</span>
+</div>
+<div class="row" style="align-items:flex-start;gap:28px;margin-bottom:14px">
+<div><label>CPU</label><div class="cpu" id="cpu">Idle</div></div>
+<div style="flex:1;min-width:200px"><label>Ready queue</label><div class="q" id="rq"></div></div>
+</div>
+<label>Gantt chart</label>
+<div class="scroll"><div class="gantt" id="gantt"></div><div class="ruler" id="ruler"></div></div>
+</div>
+
+<div class="card">
+<h2>Results</h2>
+<div class="scroll"><table id="res"><thead><tr><th>Process</th><th>Completion</th><th>Turnaround</th><th>Waiting</th><th>Response</th></tr></thead><tbody></tbody></table></div>
+<div class="stats" id="stats" style="margin-top:12px"></div>
+<p class="hint">Turnaround = Completion − Arrival. Waiting = Turnaround − Burst. Response = First CPU time − Arrival.</p>
+</div>
+
+<div class="card">
+<h2>Compare all algorithms (same processes)</h2>
+<div class="scroll"><table id="cmp"><thead><tr><th>Algorithm</th><th>Avg waiting</th><th>Avg turnaround</th><th>Avg response</th><th>Context switches</th></tr></thead><tbody></tbody></table></div>
+</div>
+</div>
+
+<script>
+const COLORS=["#4f46e5","#db2777","#059669","#d97706","#0891b2","#7c3aed","#dc2626","#65a30d","#0d9488","#c2410c"];
+const NAMES={FCFS:"FCFS",SJF:"SJF",SRTF:"SRTF",PRIO:"Priority (NP)",PRIOP:"Priority (P)",RR:"Round Robin"};
+const $=id=>document.getElementById(id);
+let procs=[],tl=[],shown=0,timer=null,sim=null;
+
+function setProcs(a){procs=a.map((p,i)=>({at:p[0],bt:p[1],pr:p[2]}));renderTable();rebuild()}
+function renderTable(){
+ const tb=$("ptable").tBodies[0];tb.innerHTML="";
+ procs.forEach((p,i)=>{
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td><span class="dot" style="background:${COLORS[i%COLORS.length]}"></span>P${i+1}</td>
+  <td><input type="number" min="0" value="${p.at}" data-i="${i}" data-k="at"></td>
+  <td><input type="number" min="1" value="${p.bt}" data-i="${i}" data-k="bt"></td>
+  <td><input type="number" min="1" value="${p.pr}" data-i="${i}" data-k="pr"></td>
+  <td><button class="s" data-del="${i}">✕</button></td>`;
+  tb.appendChild(tr);
+ });
+}
+$("ptable").addEventListener("input",e=>{
+ const t=e.target;if(!t.dataset.k)return;
+ let v=parseInt(t.value);if(isNaN(v))v=0;
+ procs[t.dataset.i][t.dataset.k]=Math.max(t.dataset.k==="at"?0:1,v);rebuild();
+});
+$("ptable").addEventListener("click",e=>{
+ const d=e.target.dataset.del;if(d===undefined||procs.length<2)return;
+ procs.splice(+d,1);renderTable();rebuild();
+});
+$("add").onclick=()=>{if(procs.length>=10)return;procs.push({at:0,bt:3,pr:1});renderTable();rebuild()};
+$("rand").onclick=()=>{
+ const n=4+Math.floor(Math.random()*3),r=m=>1+Math.floor(Math.random()*m);
+ setProcs(Array.from({length:n},()=>[Math.floor(Math.random()*8),r(7),r(5)]));
+};
+$("sample").onclick=()=>setProcs([[0,5,2],[1,3,1],[2,8,4],[3,2,3],[4,4,2]]);
+$("algo").onchange=()=>{$("qwrap").style.display=$("algo").value==="RR"?"":"none";rebuild()};
+$("quantum").oninput=rebuild;
+
+function simulate(P,algo,q){
+ const n=P.length,rem=P.map(p=>p.bt),first=Array(n).fill(null),ct=Array(n).fill(0),out=[];
+ const added=new Set(),queue=[];let t=0,cur=-1,qt=0,fin=0;
+ const pre=algo==="SRTF"||algo==="PRIOP";
+ const key=i=>algo==="SJF"?P[i].bt:algo==="SRTF"?rem[i]:(algo==="PRIO"||algo==="PRIOP")?P[i].pr:0;
+ while(fin<n&&t<5000){
+  P.forEach((p,i)=>{if(p.at<=t&&!added.has(i)){added.add(i);queue.push(i)}});
+  if(algo==="RR"){
+   if(cur>=0&&(rem[cur]===0||qt===q)){if(rem[cur]>0)queue.push(cur);cur=-1}
+   if(cur<0&&queue.length){cur=queue.shift();qt=0}
+  }else{
+   if(cur>=0&&rem[cur]===0)cur=-1;
+   if(cur<0||pre){
+    const c=P.map((_,i)=>i).filter(i=>P[i].at<=t&&rem[i]>0);
+    c.sort((a,b)=>key(a)-key(b)||((b===cur)-(a===cur))||P[a].at-P[b].at||a-b);
+    if(c.length)cur=c[0];
+   }
+  }
+  let waiting;
+  if(algo==="RR")waiting=queue.slice();
+  else waiting=P.map((_,i)=>i).filter(i=>P[i].at<=t&&rem[i]>0&&i!==cur).sort((a,b)=>key(a)-key(b)||P[a].at-P[b].at||a-b);
+  out.push({r:cur<0?null:cur,w:waiting});
+  if(cur>=0){
+   if(first[cur]===null)first[cur]=t;
+   rem[cur]--;qt++;
+   if(rem[cur]===0){ct[cur]=t+1;fin++}
+  }
+  t++;
+ }
+ const m=P.map((p,i)=>({ct:ct[i],tat:ct[i]-p.at,wt:ct[i]-p.at-p.bt,rt:(first[i]??0)-p.at}));
+ let cs=0;for(let k=1;k<out.length;k++)if(out[k].r!==null&&out[k-1].r!==null&&out[k].r!==out[k-1].r)cs++;
+ return{tl:out,m,cs};
+}
+
+function rebuild(){
+ stop();shown=0;
+ sim=simulate(procs,$("algo").value,Math.max(1,parseInt($("quantum").value)||1));
+ tl=sim.tl;draw();compare();
+}
+function chip(i){return `<span class="chip" style="background:${COLORS[i%COLORS.length]}">P${i+1}</span>`}
+function draw(){
+ const g=$("gantt"),r=$("ruler");g.innerHTML="";r.innerHTML="";
+ for(let k=0;k<shown;k++){
+  const x=tl[k].r;
+  g.insertAdjacentHTML("beforeend",x===null?`<div class="cell i">idle</div>`:`<div class="cell" style="background:${COLORS[x%COLORS.length]}">P${x+1}</div>`);
+  r.insertAdjacentHTML("beforeend",`<span>${k}</span>`);
+ }
+ if(shown)r.insertAdjacentHTML("beforeend",`<span>${shown}</span>`);
+ $("clock").textContent="Time: "+shown+(shown>=tl.length?" (finished)":"");
+ const last=shown?tl[shown-1]:null;
+ const cpu=$("cpu");
+ if(last&&last.r!==null){cpu.textContent="P"+(last.r+1);cpu.style.background=COLORS[last.r%COLORS.length];cpu.style.color="#fff"}
+ else{cpu.textContent="Idle";cpu.style.background="";cpu.style.color=""}
+ $("rq").innerHTML=last?(last.w.length?last.w.map(chip).join(""):'<span class="hint">empty</span>'):'<span class="hint">press Play or Step</span>';
+ $("play").textContent=timer?"Pause":"Play";
+ results();
+}
+function results(){
+ const tb=$("res").tBodies[0],done=shown>=tl.length;tb.innerHTML="";
+ procs.forEach((p,i)=>{
+  const m=sim.m[i];
+  tb.insertAdjacentHTML("beforeend",`<tr><td><span class="dot" style="background:${COLORS[i%COLORS.length]}"></span>P${i+1}</td>${done?`<td>${m.ct}</td><td>${m.tat}</td><td>${m.wt}</td><td>${m.rt}</td>`:'<td>–</td><td>–</td><td>–</td><td>–</td>'}</tr>`);
+ });
+ const avg=k=>(sim.m.reduce((s,x)=>s+x[k],0)/procs.length).toFixed(2);
+ const busy=tl.filter(x=>x.r!==null).length;
+ $("stats").innerHTML=done?`<div class="stat"><b>${avg("wt")}</b><span>Avg waiting</span></div><div class="stat"><b>${avg("tat")}</b><span>Avg turnaround</span></div><div class="stat"><b>${avg("rt")}</b><span>Avg response</span></div><div class="stat"><b>${(100*busy/tl.length).toFixed(0)}%</b><span>CPU utilization</span></div><div class="stat"><b>${(procs.length/tl.length).toFixed(2)}</b><span>Throughput / unit</span></div><div class="stat"><b>${sim.cs}</b><span>Context switches</span></div>`:'<span class="hint">Results appear when the simulation finishes.</span>';
+}
+function compare(){
+ const rows=Object.keys(NAMES).map(a=>{
+  const s=simulate(procs,a,Math.max(1,parseInt($("quantum").value)||1));
+  const f=k=>s.m.reduce((x,y)=>x+y[k],0)/procs.length;
+  return{a,wt:f("wt"),tat:f("tat"),rt:f("rt"),cs:s.cs};
+ });
+ const mw=Math.min(...rows.map(r=>r.wt));
+ $("cmp").tBodies[0].innerHTML=rows.map(r=>`<tr class="${r.wt===mw?"best":""}"><td>${NAMES[r.a]}</td><td>${r.wt.toFixed(2)}</td><td>${r.tat.toFixed(2)}</td><td>${r.rt.toFixed(2)}</td><td>${r.cs}</td></tr>`).join("");
+}
+function tick(){if(shown<tl.length){shown++;draw()}if(shown>=tl.length)stop()}
+function stop(){if(timer){clearInterval(timer);timer=null}$("play").textContent="Play"}
+$("play").onclick=()=>{
+ if(timer){stop();return}
+ if(shown>=tl.length)shown=0;
+ timer=setInterval(tick,1100-$("speed").value*100);draw();
+};
+$("speed").oninput=()=>{if(timer){clearInterval(timer);timer=setInterval(tick,1100-$("speed").value*100)}};
+$("step").onclick=()=>{stop();if(shown>=tl.length)shown=0;tick()};
+$("reset").onclick=()=>{stop();shown=0;draw()};
+
+$("qwrap").style.display="none";
+setProcs([[0,5,2],[1,3,1],[2,8,4],[3,2,3],[4,4,2]]);
+</script>
+</body>
+</html>
